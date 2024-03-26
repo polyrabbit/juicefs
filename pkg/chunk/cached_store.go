@@ -106,7 +106,7 @@ func (s *rSlice) ReadAt(ctx context.Context, page *Page, off int) (n int, err er
 	boff := off % s.store.conf.BlockSize
 	blockSize := s.blockSize(indx)
 	if boff+len(p) > blockSize {
-		// read beyond currend page
+		// read beyond current page
 		var got int
 		for got < len(p) {
 			// aligned to current page
@@ -155,11 +155,14 @@ func (s *rSlice) ReadAt(ctx context.Context, page *Page, off int) (n int, err er
 		}
 		// partial read
 		st := time.Now()
-		in, err := s.store.storage.Get(key, int64(boff), int64(len(p)))
-		if err == nil {
-			n, err = io.ReadFull(in, p)
-			_ = in.Close()
-		}
+		err := utils.WithTimeout(func() error { // TODO: use context.WithTimeout to gracefully cancel goroutine
+			in, err := s.store.storage.Get(key, int64(boff), int64(len(p)))
+			if err == nil {
+				n, err = io.ReadFull(in, p)
+				_ = in.Close()
+			}
+			return err
+		}, s.store.conf.GetTimeout)
 		used := time.Since(st)
 		logRequest("GET", key, fmt.Sprintf("RANGE(%d,%d) ", boff, len(p)), err, used)
 		s.store.objectDataBytes.WithLabelValues("GET").Add(float64(n))
