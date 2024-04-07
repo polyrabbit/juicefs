@@ -487,7 +487,7 @@ func newS3(endpoint, accessKey, secretKey, token string) (ObjectStorage, error) 
 			// get region or endpoint
 			if strings.Contains(uri.Host, ".amazonaws.com") {
 				vpcCompile := regexp.MustCompile(`^.*\.(.*)\.vpce\.amazonaws\.com`)
-				//vpc link
+				// vpc link
 				if vpcCompile.MatchString(uri.Host) {
 					bucketName = hostParts[0]
 					ep = hostParts[1]
@@ -537,17 +537,17 @@ func newS3(endpoint, accessKey, secretKey, token string) (ObjectStorage, error) 
 		HTTPClient: httpClient,
 	}
 
-	disable100Continue := strings.EqualFold(uri.Query().Get("disable-100-continue"), "true")
+	disable100Continue := !strings.EqualFold(uri.Query().Get("disable-100-continue"), "false")
 	if disable100Continue {
 		logger.Infof("HTTP header 100-Continue is disabled")
 		awsConfig.S3Disable100Continue = aws.Bool(true)
 	}
-	disableMD5 := strings.EqualFold(uri.Query().Get("disable-content-md5"), "true")
+	disableMD5 := !strings.EqualFold(uri.Query().Get("disable-content-md5"), "false")
 	if disableMD5 {
 		logger.Infof("HTTP header Content-MD5 is disabled")
 		awsConfig.S3DisableContentMD5Validation = &disableMD5
 	}
-	disableChecksum := strings.EqualFold(uri.Query().Get("disable-checksum"), "true")
+	disableChecksum := !strings.EqualFold(uri.Query().Get("disable-checksum"), "false")
 	if disableChecksum {
 		logger.Infof("CRC checksum is disabled")
 	}

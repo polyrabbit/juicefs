@@ -21,6 +21,7 @@ import (
 	"os"
 	"path"
 	"runtime"
+	"strconv"
 
 	"github.com/urfave/cli/v2"
 )
@@ -109,12 +110,12 @@ func storageFlags() []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:  "get-timeout",
-			Value: "60s",
+			Value: "30s",
 			Usage: "the timeout to download an object",
 		},
 		&cli.StringFlag{
 			Name:  "put-timeout",
-			Value: "60s",
+			Value: "30s",
 			Usage: "the timeout to upload an object",
 		},
 		&cli.IntFlag{
@@ -178,7 +179,7 @@ func dataCacheFlags() []cli.Flag {
 	return addCategories("DATA CACHE", []cli.Flag{
 		&cli.StringFlag{
 			Name:  "buffer-size",
-			Value: "300M",
+			Value: "1024M",
 			Usage: "total read/write buffering in MiB",
 		},
 		&cli.IntFlag{
@@ -211,12 +212,12 @@ func dataCacheFlags() []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:  "cache-size",
-			Value: "100G",
+			Value: "3T",
 			Usage: "size of cached object for read in MiB",
 		},
 		&cli.Float64Flag{
 			Name:  "free-space-ratio",
-			Value: 0.1,
+			Value: 0.2,
 			Usage: "min free space (ratio)",
 		},
 		&cli.BoolFlag{
@@ -225,7 +226,7 @@ func dataCacheFlags() []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:  "verify-cache-checksum",
-			Value: "full",
+			Value: "none",
 			Usage: "checksum level (none, full, shrink, extend)",
 		},
 		&cli.StringFlag{
@@ -240,7 +241,7 @@ func dataCacheFlags() []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:  "cache-expire",
-			Value: "0s",
+			Value: "3d",
 			Usage: "cached blocks not accessed for longer than this option will be automatically evicted (0 means never)",
 		},
 	})
@@ -254,11 +255,12 @@ func metaFlags() []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:  "backup-meta",
-			Value: "1h",
+			Value: "2h",
 			Usage: "interval to automatically backup metadata in the object storage (0 means disable backup)",
 		},
 		&cli.BoolFlag{
 			Name:  "backup-skip-trash",
+			Value: true,
 			Usage: "skip files in trash when backup metadata",
 		},
 		&cli.StringFlag{
@@ -286,7 +288,7 @@ func metaFlags() []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:  "skip-dir-mtime",
-			Value: "100ms",
+			Value: "3s",
 			Usage: "skip updating attribute of a directory if the mtime difference is smaller than this value",
 		},
 	})
@@ -302,10 +304,18 @@ func clientFlags(defaultEntryCache float64) []cli.Flag {
 }
 
 func shareInfoFlags() []cli.Flag {
+	defaultMetricPort := 9567
+	if port := os.Getenv("PORT_METRICS"); port != "" {
+		if p, err := strconv.Atoi(port); err == nil && p > 0 && p < 65536 {
+			defaultMetricPort = p
+		} else {
+			logger.Warnf("Invalid PORT_METRICS: %q", port)
+		}
+	}
 	return addCategories("METRICS", []cli.Flag{
 		&cli.StringFlag{
 			Name:  "metrics",
-			Value: "127.0.0.1:9567",
+			Value: fmt.Sprintf("0.0.0.0:%d", defaultMetricPort),
 			Usage: "address to export metrics",
 		},
 		&cli.StringFlag{
@@ -320,6 +330,7 @@ func shareInfoFlags() []cli.Flag {
 		&cli.BoolFlag{
 			Name:  "no-usage-report",
 			Usage: "do not send usage report",
+			Value: true,
 		},
 	})
 }
@@ -328,7 +339,7 @@ func metaCacheFlags(defaultEntryCache float64) []cli.Flag {
 	return addCategories("META CACHE", []cli.Flag{
 		&cli.StringFlag{
 			Name:  "attr-cache",
-			Value: "1.0s",
+			Value: "30.0s",
 			Usage: "attributes cache timeout",
 		},
 		&cli.StringFlag{
@@ -338,12 +349,12 @@ func metaCacheFlags(defaultEntryCache float64) []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:  "dir-entry-cache",
-			Value: "1.0s",
+			Value: "30.0s",
 			Usage: "dir entry cache timeout",
 		},
 		&cli.StringFlag{
 			Name:  "open-cache",
-			Value: "0s",
+			Value: "30s",
 			Usage: "The cache time to reuse open file without checking update (0 means disable this feature)",
 		},
 		&cli.Uint64Flag{

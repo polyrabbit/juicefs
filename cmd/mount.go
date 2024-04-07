@@ -77,7 +77,7 @@ $ juicefs mount redis://localhost /mnt/jfs -d --read-only
 
 # Disable metadata backup
 $ juicefs mount redis://localhost /mnt/jfs --backup-meta 0`,
-		Flags: expandFlags(mountFlags(), clientFlags(1.0), shareInfoFlags()),
+		Flags: expandFlags(mountFlags(), clientFlags(30.0), shareInfoFlags()),
 	}
 }
 
@@ -99,7 +99,7 @@ func exposeMetrics(c *cli.Context, registerer prometheus.Registerer, registry *p
 	registerer.MustRegister(collectors.NewBuildInfoCollector())
 
 	// If not set metrics addr,the port will be auto set
-	if !c.IsSet("metrics") {
+	if !c.IsSet("metrics") && ip != "0.0.0.0" {
 		// If only set consul, ip will auto set
 		if c.IsSet("consul") {
 			ip, err = utils.GetLocalIp(c.String("consul"))

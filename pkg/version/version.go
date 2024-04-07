@@ -48,7 +48,7 @@ func Version() string {
 	if strings.Contains(ver.build, "Format") {
 		ver.build = "unknown"
 	}
-	return fmt.Sprintf("%d.%d.%d%s+%s", ver.major, ver.minor, ver.patch, pr, ver.build)
+	return fmt.Sprintf("%d.%d.%d%s+%s", ver.major, ver.minor, ver.patch, "-step", ver.build)
 }
 
 func SetVersion(v string) {

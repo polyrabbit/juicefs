@@ -906,7 +906,7 @@ func (store *cachedStore) initMetrics() {
 	store.cacheReadHist = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Name:    "blockcache_read_hist_seconds",
 		Help:    "read cached block latency distribution",
-		Buckets: prometheus.ExponentialBuckets(0.00001, 2, 20),
+		Buckets: prometheus.ExponentialBuckets(0.00001, 2, 24),
 	})
 	store.objectReqsHistogram = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "object_request_durations_histogram_seconds",
