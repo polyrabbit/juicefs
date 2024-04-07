@@ -443,7 +443,7 @@ func Serve(v *vfs.VFS, options string, xattrs, ioctl bool) error {
 	imp := newFileSystem(conf, v)
 
 	var opt fuse.MountOptions
-	opt.FsName = "JuiceFS:" + conf.Format.Name
+	opt.FsName = "Juice4S:" + conf.Format.Name
 	opt.Name = "juicefs"
 	opt.SingleThreaded = false
 	opt.MaxBackground = 50
