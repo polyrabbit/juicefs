@@ -183,9 +183,7 @@ type baseMeta struct {
 	usedInodesG prometheus.Gauge
 	txDist      prometheus.Histogram
 	txRestart   prometheus.Counter
-	opDist      prometheus.Histogram
-	opCount     *prometheus.CounterVec
-	opDuration  *prometheus.CounterVec
+	opDist      *prometheus.HistogramVec
 
 	en engine
 }
@@ -227,18 +225,10 @@ func newBaseMeta(addr string, conf *Config) *baseMeta {
 			Name: "transaction_restart",
 			Help: "The number of times a transaction is restarted.",
 		}),
-		opDist: prometheus.NewHistogram(prometheus.HistogramOpts{
+		opDist: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "meta_ops_durations_histogram_seconds",
 			Help:    "Operation latency distributions.",
 			Buckets: prometheus.ExponentialBuckets(0.0001, 1.5, 30),
-		}),
-		opCount: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "meta_ops_total",
-			Help: "Meta operation count",
-		}, []string{"method"}),
-		opDuration: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "meta_ops_duration_seconds",
-			Help: "Meta operation duration in seconds.",
 		}, []string{"method"}),
 	}
 }
@@ -252,8 +242,6 @@ func (m *baseMeta) InitMetrics(reg prometheus.Registerer) {
 	reg.MustRegister(m.txDist)
 	reg.MustRegister(m.txRestart)
 	reg.MustRegister(m.opDist)
-	reg.MustRegister(m.opCount)
-	reg.MustRegister(m.opDuration)
 
 	go func() {
 		for {
@@ -269,10 +257,7 @@ func (m *baseMeta) InitMetrics(reg prometheus.Registerer) {
 }
 
 func (m *baseMeta) timeit(method string, start time.Time) {
-	used := time.Since(start).Seconds()
-	m.opDist.Observe(used)
-	m.opCount.WithLabelValues(method).Inc()
-	m.opDuration.WithLabelValues(method).Add(used)
+	m.opDist.WithLabelValues(method).Observe(time.Since(start).Seconds())
 }
 
 func (m *baseMeta) getBase() *baseMeta {

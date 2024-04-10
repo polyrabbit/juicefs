@@ -27,18 +27,10 @@ import (
 )
 
 var (
-	opsDurationsHistogram = prometheus.NewHistogram(prometheus.HistogramOpts{
+	opsDurationsHistogram = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "fuse_ops_durations_histogram_seconds",
 		Help:    "Operations latency distributions.",
 		Buckets: prometheus.ExponentialBuckets(0.0001, 1.5, 30),
-	})
-	opsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "fuse_ops_total",
-		Help: "Total number of operations.",
-	}, []string{"method"})
-	opsDurations = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "fuse_ops_durations_seconds",
-		Help: "Operations latency in seconds.",
 	}, []string{"method"})
 	opsIOErrors = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "fuse_ops_io_errors",
@@ -63,9 +55,7 @@ func init() {
 
 func logit(ctx Context, method string, err syscall.Errno, format string, args ...interface{}) {
 	used := ctx.Duration()
-	opsDurationsHistogram.Observe(used.Seconds())
-	opsTotal.WithLabelValues(method).Inc()
-	opsDurations.WithLabelValues(method).Add(used.Seconds())
+	opsDurationsHistogram.WithLabelValues(method).Observe(used.Seconds())
 	if err != 0 {
 		opsIOErrors.WithLabelValues(utils.ErrnoName(err)).Inc()
 	}
