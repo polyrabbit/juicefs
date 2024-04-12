@@ -177,7 +177,7 @@ func (s *rSlice) ReadAt(ctx context.Context, page *Page, off int) (n int, err er
 			s.store.fetcher.fetch(key)
 			return n, nil
 		} else {
-			s.store.objectReqErrors.Add(1)
+			s.store.objectReqErrors.WithLabelValues("GET", errLabel(err)).Add(1)
 			// fall back to full read
 		}
 	}
@@ -324,6 +324,19 @@ func (s *wSlice) WriteAt(p []byte, off int64) (n int, err error) {
 	return n, nil
 }
 
+func errLabel(err error) string {
+	if err == nil {
+		return ""
+	}
+	// strip request id and host id in string: NoSuchKey: The specified key does not exist. status code: 404, request id: cp5mu12dcjhje0i5rprg, host id:
+	errStr := err.Error()
+	idx := strings.Index(errStr, ",")
+	if idx != -1 {
+		errStr = errStr[:idx]
+	}
+	return strings.TrimSpace(errStr)
+}
+
 func (store *cachedStore) put(key string, p *Page) error {
 	if store.upLimit != nil {
 		store.upLimit.Wait(int64(len(p.Data)))
@@ -342,7 +355,7 @@ func (store *cachedStore) put(key string, p *Page) error {
 		store.objectDataBytes.WithLabelValues("PUT", sc).Add(float64(len(p.Data)))
 		store.objectReqsHistogram.WithLabelValues("PUT", sc).Observe(used.Seconds())
 		if err != nil {
-			store.objectReqErrors.Add(1)
+			store.objectReqErrors.WithLabelValues("GET", errLabel(err)).Add(1)
 		}
 		return err
 	}, store.conf.PutTimeout)
@@ -363,7 +376,7 @@ func (store *cachedStore) delete(key string) error {
 	logRequest("DELETE", key, "", reqID, err, used)
 	store.objectReqsHistogram.WithLabelValues("DELETE", "").Observe(used.Seconds())
 	if err != nil {
-		store.objectReqErrors.Add(1)
+		store.objectReqErrors.WithLabelValues("DELETE", errLabel(err)).Add(1)
 	}
 	return err
 }
@@ -656,7 +669,7 @@ type cachedStore struct {
 	cacheMissBytes      prometheus.Counter
 	cacheReadHist       prometheus.Histogram
 	objectReqsHistogram *prometheus.HistogramVec
-	objectReqErrors     prometheus.Counter
+	objectReqErrors     *prometheus.CounterVec
 	objectDataBytes     *prometheus.CounterVec
 	stageBlockDelay     prometheus.Counter
 	stageBlockErrors    prometheus.Counter
@@ -708,7 +721,7 @@ func (store *cachedStore) load(key string, page *Page, cache bool, forceCache bo
 			time.Sleep(time.Second * time.Duration(tried*tried))
 			if tried > 0 {
 				logger.Warnf("GET %s: %s; retrying", key, err)
-				store.objectReqErrors.Add(1)
+				store.objectReqErrors.WithLabelValues("GET", errLabel(err)).Add(1)
 				start = time.Now()
 			}
 			in, err = store.storage.Get(key, 0, -1, object.WithRequestID(&reqID), object.WithStorageClass(&sc))
@@ -731,7 +744,7 @@ func (store *cachedStore) load(key string, page *Page, cache bool, forceCache bo
 	store.objectDataBytes.WithLabelValues("GET", sc).Add(float64(n))
 	store.objectReqsHistogram.WithLabelValues("GET", sc).Observe(used.Seconds())
 	if err != nil {
-		store.objectReqErrors.Add(1)
+		store.objectReqErrors.WithLabelValues("GET", errLabel(err)).Add(1)
 		return fmt.Errorf("get %s: %s", key, err)
 	}
 	if compressed {
@@ -871,10 +884,10 @@ func (store *cachedStore) initMetrics() {
 		Help:    "Object requests latency distributions.",
 		Buckets: prometheus.ExponentialBuckets(0.01, 1.5, 25),
 	}, []string{"method", "storage_class"})
-	store.objectReqErrors = prometheus.NewCounter(prometheus.CounterOpts{
+	store.objectReqErrors = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "object_request_errors",
 		Help: "failed requests to object store",
-	})
+	}, []string{"method", "error"})
 	store.objectDataBytes = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "object_request_data_bytes",
 		Help: "Object requests size in bytes.",

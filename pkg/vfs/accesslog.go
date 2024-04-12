@@ -35,7 +35,7 @@ var (
 	opsIOErrors = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "fuse_ops_io_errors",
 		Help: "Number of IO errors.",
-	}, []string{"errno"})
+	}, []string{"method", "errno"})
 )
 
 type logReader struct {
@@ -57,7 +57,7 @@ func logit(ctx Context, method string, err syscall.Errno, format string, args ..
 	used := ctx.Duration()
 	opsDurationsHistogram.WithLabelValues(method).Observe(used.Seconds())
 	if err != 0 {
-		opsIOErrors.WithLabelValues(utils.ErrnoName(err)).Inc()
+		opsIOErrors.WithLabelValues(method, utils.ErrnoName(err)).Inc()
 	}
 	readerLock.RLock()
 	defer readerLock.RUnlock()
