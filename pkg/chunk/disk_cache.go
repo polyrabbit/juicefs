@@ -263,14 +263,14 @@ func (cache *cacheStore) renameFile(oldpath, newpath string) error {
 	})
 }
 
-func (cache *cacheStore) writeFile(f *os.File, data []byte) error {
+func (cache *cacheStore) writeFile(f io.Writer, data []byte) error {
 	return cache.checkErr(func() error {
 		_, err := f.Write(data)
 		return err
 	})
 }
 
-func (cache *cacheStore) closeFile(f *os.File) error {
+func (cache *cacheStore) closeFile(f io.Closer) error {
 	return cache.checkErr(func() error {
 		return f.Close()
 	})
@@ -434,9 +434,9 @@ func (cache *cacheStore) flushPage(path string, data []byte) (err error) {
 	cache.createDir(filepath.Dir(path))
 	tmp := path + ".tmp"
 
-	var f *os.File
+	var f noPageCacheWriter
 	err = cache.checkErr(func() error {
-		f, err = os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE, cache.mode)
+		f.File, err = os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE, cache.mode)
 		return err
 	})
 	if err != nil {
@@ -1289,4 +1289,8 @@ func (cf *cacheFile) ReadAt(b []byte, off int64) (n int, err error) {
 		}
 	}
 	return
+}
+
+type noPageCacheWriter struct {
+	*os.File
 }

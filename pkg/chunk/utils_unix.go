@@ -22,6 +22,8 @@ package chunk
 import (
 	"os"
 	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 func getNlink(fi os.FileInfo) int {
@@ -60,4 +62,30 @@ func inRootVolume(dir string) bool {
 		return false
 	}
 	return dstat.Sys().(*syscall.Stat_t).Dev == rstat.Sys().(*syscall.Stat_t).Dev
+}
+
+var dropPageCache = os.Getenv("JFS_DROP_PAGE_CACHE") == "1"
+
+func (cf *cacheFile) Close() error {
+	if dropPageCache {
+		err := unix.Fadvise(int(cf.File.Fd()), 0, 0, unix.FADV_DONTNEED)
+		if err != nil {
+			logger.Warnf("fadvise %s: %s", cf.File.Name(), err)
+		}
+	}
+	return cf.File.Close()
+}
+
+func (cw noPageCacheWriter) Close() error {
+	if dropPageCache {
+		err := cw.File.Sync()
+		if err != nil {
+			return err
+		}
+		err = unix.Fadvise(int(cw.File.Fd()), 0, 0, unix.FADV_DONTNEED)
+		if err != nil {
+			logger.Warnf("fadvise %s: %s", cw.File.Name(), err)
+		}
+	}
+	return cw.File.Close()
 }
