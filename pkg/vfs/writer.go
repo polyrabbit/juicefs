@@ -199,6 +199,10 @@ func (c *chunkWriter) commitThread() {
 			var ss = meta.Slice{Id: s.id, Size: s.length, Off: s.soff, Len: s.slen}
 			err = f.w.m.Write(meta.Background, f.inode, c.indx, s.off, ss, s.lastMod)
 			f.w.reader.Invalidate(f.inode, uint64(c.indx)*meta.ChunkSize+uint64(s.off), uint64(ss.Len))
+			if err != 0 { // Remove uploaded slices if failed to check into meta
+				logger.Warnf("Failed to checkin chunk %d: %s, removing", s.id, err)
+				s.writer.Abort()
+			}
 		}
 
 		f.Lock()
@@ -300,6 +304,9 @@ func (f *fileWriter) Write(ctx meta.Context, off uint64, data []byte) syscall.Er
 		for f.w.usedBufferSize() > f.w.bufferSize*2 {
 			time.Sleep(time.Millisecond * 100)
 		}
+	}
+	if f.err != 0 {
+		return f.err
 	}
 
 	s := time.Now()
