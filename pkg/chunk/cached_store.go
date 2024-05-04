@@ -252,6 +252,7 @@ func (s *rSlice) Remove() error {
 	for i := 0; i <= lastIndx; i++ {
 		if e := s.delete(i); e != nil {
 			err = e
+			logger.Warnf("Failed to delete block %s: %s", s.key(i), e)
 		}
 	}
 	return err
