@@ -589,16 +589,19 @@ func (cache *cacheStore) load(key string) (ReadCloser, error) {
 
 	cache.Lock()
 	defer cache.Unlock()
+	k := cache.getCacheKey(key)
 	if p, ok := cache.pages[key]; ok {
+		if it, ok := cache.keys[k]; ok && it.size < 0 { // May store in memory first, and upload to OSS later
+			return StagedReadCloser{NewPageReader(p)}, nil
+		}
 		return NewPageReader(p), nil
 	}
-	k := cache.getCacheKey(key)
 	if cache.scanned && cache.keys[k].atime == 0 {
 		return nil, errNotCached
 	}
 	cache.Unlock()
 
-	var f *cacheFile
+	var f ReadCloser
 	var err error
 	err = cache.checkErr(func() error {
 		f, err = openCacheFile(cache.cachePath(key), parseObjOrigSize(key), cache.checksum)
@@ -610,6 +613,9 @@ func (cache *cacheStore) load(key string) (ReadCloser, error) {
 		if it, ok := cache.keys[k]; ok {
 			// update atime
 			cache.keys[k] = cacheItem{it.size, uint32(time.Now().Unix())}
+			if it.size < 0 {
+				f = StagedReadCloser{f}
+			}
 		}
 	} else if it, ok := cache.keys[k]; ok {
 		if it.size > 0 {
@@ -1164,6 +1170,10 @@ type ReadCloser interface {
 	// io.Reader
 	io.ReaderAt
 	io.Closer
+}
+
+type StagedReadCloser struct {
+	ReadCloser
 }
 
 func (m *cacheManager) load(key string) (ReadCloser, error) {

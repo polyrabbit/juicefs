@@ -133,6 +133,11 @@ func storageFlags() []cli.Flag {
 			Usage: "number of threads allowed to write staged files, other requests will be uploaded directly (this option is only effective when 'writeback' mode is enabled)",
 		},
 		&cli.IntFlag{
+			Name:  "max-cache-read",
+			Value: 0, // Very helpful when cache disk is slower than object storage
+			Usage: "number of threads allowed to read cache files, other requests will be read from object storage directly",
+		},
+		&cli.IntFlag{
 			Name:  "max-deletes",
 			Value: 10,
 			Usage: "number of threads to delete objects",

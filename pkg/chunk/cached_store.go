@@ -27,6 +27,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/juicedata/juicefs/pkg/compress"
@@ -41,7 +42,10 @@ const pageSize = 1 << 16  // 64K
 const SlowRequest = time.Second * time.Duration(10)
 
 var (
-	logger = utils.GetLogger("juicefs")
+	logger              = utils.GetLogger("juicefs")
+	cacheReaders        atomic.Int64
+	objectReaders       atomic.Int64
+	errCacheReaderLimit = errors.New("concurrent cache reader limit reached")
 )
 
 type pendingItem struct {
@@ -93,6 +97,33 @@ func (s *rSlice) keys() []string {
 	return keys
 }
 
+func (s *rSlice) ReadCacheAt(key string, p []byte, boff int) (n int, err error) {
+	start := time.Now()
+	r, err := s.store.bcache.load(key)
+	if err == nil {
+		defer r.Close()
+		maxReaders := s.store.conf.MaxCacheRead
+		_, inStage := r.(StagedReadCloser)
+		if !inStage && maxReaders != 0 && cacheReaders.Load() > int64(maxReaders) { // Cache exists and not staged, but too many readers
+			return 0, errCacheReaderLimit
+		}
+		cacheReaders.Add(1)
+		defer cacheReaders.Add(-1)
+		n, err = r.ReadAt(p, int64(boff))
+		if err == nil {
+			s.store.cacheHits.Add(1)
+			s.store.cacheHitBytes.Add(float64(n))
+			s.store.cacheReadHist.Observe(time.Since(start).Seconds())
+			return n, nil
+		}
+		if f, ok := r.(*os.File); ok {
+			logger.Warnf("remove partial cached block %s: %d %s", f.Name(), n, err)
+			_ = os.Remove(f.Name())
+		}
+	}
+	return 0, err
+}
+
 func (s *rSlice) ReadAt(ctx context.Context, page *Page, off int) (n int, err error) {
 	p := page.Data
 	if len(p) == 0 {
@@ -126,28 +157,21 @@ func (s *rSlice) ReadAt(ctx context.Context, page *Page, off int) (n int, err er
 		return got, nil
 	}
 
+	cacheExists := false
 	key := s.key(indx)
 	if s.store.conf.CacheSize > 0 {
-		start := time.Now()
-		r, err := s.store.bcache.load(key)
-		if err == nil {
-			n, err = r.ReadAt(p, int64(boff))
-			_ = r.Close()
-			if err == nil {
-				s.store.cacheHits.Add(1)
-				s.store.cacheHitBytes.Add(float64(n))
-				s.store.cacheReadHist.Observe(time.Since(start).Seconds())
-				return n, nil
-			}
-			if f, ok := r.(*os.File); ok {
-				logger.Warnf("remove partial cached block %s: %d %s", f.Name(), n, err)
-				_ = os.Remove(f.Name())
-			}
+		if n, err = s.ReadCacheAt(key, p, boff); err == nil {
+			return n, nil
 		}
+		cacheExists = errors.Is(err, errCacheReaderLimit)
 	}
 
-	s.store.cacheMiss.Add(1)
-	s.store.cacheMissBytes.Add(float64(len(p)))
+	if !cacheExists {
+		s.store.cacheMiss.Add(1)
+		s.store.cacheMissBytes.Add(float64(len(p)))
+	}
+	objectReaders.Add(1)
+	defer objectReaders.Add(-1)
 
 	if s.store.seekable && boff > 0 && len(p) <= blockSize/4 {
 		if s.store.downLimit != nil {
@@ -174,7 +198,9 @@ func (s *rSlice) ReadAt(ctx context.Context, page *Page, off int) (n int, err er
 		s.store.objectDataBytes.WithLabelValues("GET", sc).Add(float64(n))
 		s.store.objectReqsHistogram.WithLabelValues("GET", sc).Observe(used.Seconds())
 		if err == nil {
-			s.store.fetcher.fetch(key)
+			if !cacheExists {
+				s.store.fetcher.fetch(key)
+			}
 			return n, nil
 		} else {
 			s.store.objectReqErrors.WithLabelValues("GET", errLabel(err)).Add(1)
@@ -189,7 +215,7 @@ func (s *rSlice) ReadAt(ctx context.Context, page *Page, off int) (n int, err er
 		} else {
 			tmp.Acquire()
 		}
-		err = s.store.load(key, tmp, s.store.shouldCache(blockSize), false)
+		err = s.store.load(key, tmp, !cacheExists && s.store.shouldCache(blockSize), false)
 		return tmp, err
 	})
 	defer block.Release()
@@ -554,6 +580,7 @@ type Config struct {
 	Compress          string
 	MaxUpload         int
 	MaxStageWrite     int
+	MaxCacheRead      int
 	MaxRetries        int
 	UploadLimit       int64 // bytes per second
 	DownloadLimit     int64 // bytes per second
@@ -572,10 +599,11 @@ type Config struct {
 
 func (c *Config) SelfCheck(uuid string) {
 	if c.CacheSize == 0 {
-		if c.Writeback || c.Prefetch > 0 {
+		if c.Writeback || c.Prefetch > 0 || c.MaxCacheRead > 0 {
 			logger.Warnf("cache-size is 0, writeback and prefetch will be disabled")
 			c.Writeback = false
 			c.Prefetch = 0
+			c.MaxCacheRead = 0
 		}
 		c.CacheDir = "memory"
 	}
@@ -942,6 +970,20 @@ func (store *cachedStore) regMetrics(reg prometheus.Registerer) {
 		func() float64 {
 			return float64(len(store.currentUpload))
 		}))
+	reg.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name:        "store_readers",
+		Help:        "number of storage readers",
+		ConstLabels: prometheus.Labels{"storage": "cache"},
+	}, func() float64 {
+		return float64(cacheReaders.Load())
+	}))
+	reg.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name:        "store_readers",
+		Help:        "number of storage readers",
+		ConstLabels: prometheus.Labels{"storage": "object"},
+	}, func() float64 {
+		return float64(objectReaders.Load())
+	}))
 }
 
 func (store *cachedStore) shouldCache(size int) bool {
