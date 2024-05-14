@@ -145,6 +145,10 @@ func storageFlags() []cli.Flag {
 			Name:  "download-limit",
 			Usage: "bandwidth limit for download in Mbps",
 		},
+		&cli.StringFlag{
+			Name:  "max-readahead",
+			Usage: "max readahead size in MiB per read session",
+		},
 	})
 }
 
