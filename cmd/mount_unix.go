@@ -698,10 +698,10 @@ func canShutdownGracefully(mp string, newConf *vfs.Config) bool {
 		return false
 	}
 	var ino uint64
-	var err error
-	err = utils.WithTimeout(context.TODO(), func(context.Context) error {
-		ino, err = utils.GetFileInode(mp)
-		return err
+	err := utils.WithTimeout(context.TODO(), func(context.Context) error {
+		var getErr error
+		ino, getErr = utils.GetFileInode(mp)
+		return getErr
 	}, time.Second*3)
 	if err != nil {
 		logger.Warnf("get inode of %q: %s", mp, err)
